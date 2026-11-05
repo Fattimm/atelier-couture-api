@@ -6,6 +6,7 @@ from app.core.exceptions import Conflit, DonneesInvalides, RessourceIntrouvable
 from app.core.security import hacher_mot_de_passe
 from app.models import RoleUtilisateur, Utilisateur
 from app.schemas.utilisateur import UtilisateurCreate, UtilisateurUpdate
+from app.services.commun import verifier_champs_non_vides
 
 MESSAGE_EMAIL_PRIS = "Un compte existe déjà avec cet e-mail"
 
@@ -55,9 +56,7 @@ def modifier_utilisateur(
     changements = donnees.model_dump(exclude_unset=True)
 
     # Un champ envoyé explicitement à null ne peut pas vider une colonne obligatoire
-    champs_vides = [champ for champ, valeur in changements.items() if valeur is None]
-    if champs_vides:
-        raise DonneesInvalides(f"Ces champs ne peuvent pas être vides : {', '.join(champs_vides)}")
+    verifier_champs_non_vides(changements)
 
     # RG24 : un administrateur ne peut ni se désactiver, ni retirer son propre rôle d'admin
     if utilisateur.id == auteur.id:

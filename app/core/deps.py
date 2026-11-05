@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decoder_jeton_acces
 from app.models import RoleUtilisateur, Utilisateur
+from fastapi import Depends, HTTPException, Query, status
 
 # Lit le jeton dans l'en-tête "Authorization: Bearer ..." et active le bouton
 # "Authorize" de Swagger. auto_error=False : on gère nous-mêmes l'absence de
@@ -72,3 +73,6 @@ def require_roles(*roles: RoleUtilisateur) -> Callable[[Utilisateur], Utilisateu
 AdminUser = Annotated[Utilisateur, Depends(require_roles())]
 AccueilUser = Annotated[Utilisateur, Depends(require_roles(RoleUtilisateur.accueil))]
 TailleurUser = Annotated[Utilisateur, Depends(require_roles(RoleUtilisateur.tailleur))]
+# Paramètres de pagination communs (énoncé : limit = 20 par défaut, maximum 100 ; offset = 0)
+LimitParam = Annotated[int, Query(ge=1, le=100, description="Nombre d'éléments par page (1 à 100)")]
+OffsetParam = Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")]

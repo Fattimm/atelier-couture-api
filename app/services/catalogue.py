@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import Conflit, DonneesInvalides, RessourceIntrouvable
 from app.models import TypeVetement
 from app.schemas.type_vetement import TypeVetementCreate, TypeVetementUpdate
+from app.services.commun import verifier_champs_non_vides
 
 MESSAGE_NOM_PRIS = "Une prestation porte déjà ce nom dans le catalogue"
 
@@ -59,12 +60,7 @@ def modifier_type_vetement(
     type_vetement = obtenir_type_vetement(db, type_vetement_id)
     changements = donnees.model_dump(exclude_unset=True)
 
-    champs_vides = [
-        champ for champ, valeur in changements.items()
-        if valeur is None and champ not in CHAMPS_EFFACABLES
-    ]
-    if champs_vides:
-        raise DonneesInvalides(f"Ces champs ne peuvent pas être vides : {', '.join(champs_vides)}")
+    verifier_champs_non_vides(changements, effacables=CHAMPS_EFFACABLES)
 
     if "nom" in changements and _nom_deja_pris(db, changements["nom"], sauf_id=type_vetement.id):
         raise Conflit(MESSAGE_NOM_PRIS)
