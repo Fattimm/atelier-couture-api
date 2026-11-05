@@ -2,9 +2,10 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, Index, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from typing import TYPE_CHECKING
 
 
 class GenreClient(enum.StrEnum):
@@ -36,4 +37,9 @@ class Client(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    mesures: Mapped[list["Mesure"]] = relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
