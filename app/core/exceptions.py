@@ -30,6 +30,7 @@ TRADUCTIONS_VALIDATION = {
     "less_than_equal": "doit être inférieur ou égal à {le}",
     "enum": "valeur non autorisée (valeurs possibles : {expected})",
     "json_invalid": "le corps de la requête n'est pas un JSON valide",
+    "int_from_float": "doit être un nombre entier, sans décimales",
 }
 
 
