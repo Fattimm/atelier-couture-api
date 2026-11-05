@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 
 from app.core.config import settings
-from app.routers import health
+from app.routers import auth, health
+
+# Les routeurs métier seront ajoutés ici avec le préfixe /api/v1
+API_PREFIX = "/api/v1"
 
 app = FastAPI(
     title=settings.app_name,
@@ -12,5 +15,5 @@ app = FastAPI(
 # Route de santé, hors préfixe /api/v1
 app.include_router(health.router)
 
-# Les routeurs métier seront ajoutés ici avec le préfixe /api/v1
-API_PREFIX = "/api/v1"
+# Routeurs métier, avec le préfixe /api/v1
+app.include_router(auth.router, prefix=API_PREFIX)
