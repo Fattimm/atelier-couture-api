@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from typing import TYPE_CHECKING
+from app.models.commande import Commande
 
 
 class GenreClient(enum.StrEnum):
@@ -43,3 +44,4 @@ class Client(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    commandes: Mapped[list["Commande"]] = relationship(back_populates="client")
