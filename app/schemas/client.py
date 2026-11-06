@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, StringConstraints
@@ -76,3 +76,14 @@ class ClientRead(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ClientResume(BaseModel):
+    """Résumé financier d'un client (route 13). Les commandes annulées sont exclues."""
+
+    nb_commandes: int
+    chiffre_affaires: int
+    total_paye: int
+    solde_du: int
+    derniere_commande: date | None  # date de la dernière commande non annulée
+    a_des_mesures: bool

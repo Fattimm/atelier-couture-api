@@ -8,6 +8,8 @@ from app.models import CHAMPS_MESURES, Mesure, Utilisateur
 from app.schemas.mesure import MesureCreate, MesureUpdate
 from app.services.clients import obtenir_client
 from app.services.commun import verifier_champs_non_vides
+from app.core.exceptions import Conflit, DonneesInvalides, RessourceIntrouvable
+from app.models import CHAMPS_MESURES, Commande, Mesure, Utilisateur
 
 # Les mesures et les notes sont facultatives : on peut les effacer avec null.
 # date_prise, elle, est obligatoire.
@@ -89,11 +91,12 @@ def modifier_mesure(db: Session, mesure_id: int, donnees: MesureUpdate) -> Mesur
 
 
 def supprimer_mesure(db: Session, mesure_id: int) -> None:
-    """Supprime une prise de mesures (route 23)."""
+    """Supprime une prise de mesures (route 23). 409 si une commande l'utilise (RG4)."""
     mesure = obtenir_mesure(db, mesure_id)
 
-    # TODO (palier 2, commandes) : RG4, refuser avec Conflit (409)
-    # si une commande utilise ces mesures.
+    numero = db.scalar(select(Commande.numero).where(Commande.mesure_id == mesure.id).limit(1))
+    if numero is not None:
+        raise Conflit(f"Ces mesures sont utilisées par la commande {numero} : elles ne peuvent pas être supprimées")
 
     db.delete(mesure)
     db.flush()

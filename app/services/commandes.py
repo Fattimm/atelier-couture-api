@@ -361,3 +361,9 @@ def retirer_ligne(db: Session, commande_id: int, ligne_id: int) -> Commande:
     recalculer_montant_total(commande)  # RG7
     db.flush()
     return commande
+
+
+def lister_commandes_client(db: Session, client_id: int, limit: int, offset: int) -> tuple[list[Commande], int]:
+    """Commandes d'un client, paginées, la plus récente d'abord (route 12). 404 si le client est inconnu."""
+    obtenir_client(db, client_id)
+    return lister_commandes(db, client_id=client_id, limit=limit, offset=offset)

@@ -1,11 +1,13 @@
-from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy import exists, func, or_, select
 
 from app.core.exceptions import Conflit, RessourceIntrouvable
-from app.models import Client, GenreClient
-from app.schemas.client import ClientCreate, ClientUpdate, nettoyer_telephone
 from app.services.commun import paginer, verifier_champs_non_vides
+from app.models import Client, Commande, GenreClient, Mesure, StatutCommande
+from app.schemas.client import ClientCreate, ClientResume, ClientUpdate, nettoyer_telephone
+
+
 
 MESSAGE_TELEPHONE_PRIS = "Un client existe déjà avec ce numéro de téléphone"
 
@@ -89,3 +91,39 @@ def modifier_client(db: Session, client_id: int, donnees: ClientUpdate) -> Clien
     except IntegrityError:
         raise Conflit(MESSAGE_TELEPHONE_PRIS) from None
     return client
+
+
+def supprimer_client(db: Session, client_id: int) -> None:
+    """Supprime un client et ses mesures (route 11). 409 s'il a des commandes (RG4)."""
+    client = obtenir_client(db, client_id)
+
+    nb_commandes = db.scalar(select(func.count(Commande.id)).where(Commande.client_id == client.id))
+    if nb_commandes:
+        raise Conflit(f"Ce client a {nb_commandes} commande(s) : il ne peut pas être supprimé")
+
+    db.delete(client)  # ses mesures sont supprimées en cascade par la base
+    db.flush()
+
+
+def resume_client(db: Session, client_id: int) -> ClientResume:
+    """Résumé financier d'un client (route 13). Les commandes annulées sont exclues."""
+    obtenir_client(db, client_id)
+
+    requete = select(
+        func.count(Commande.id),
+        func.coalesce(func.sum(Commande.montant_total), 0),
+        func.coalesce(func.sum(Commande.montant_paye), 0),
+        func.max(Commande.date_commande),
+    ).where(Commande.client_id == client_id, Commande.statut != StatutCommande.annulee)
+    nb_commandes, chiffre_affaires, total_paye, derniere_commande = db.execute(requete).one()
+
+    a_des_mesures = db.scalar(select(exists().where(Mesure.client_id == client_id)))
+
+    return ClientResume(
+        nb_commandes=nb_commandes,
+        chiffre_affaires=chiffre_affaires,
+        total_paye=total_paye,
+        solde_du=chiffre_affaires - total_paye,
+        derniere_commande=derniere_commande,
+        a_des_mesures=a_des_mesures,
+    )
