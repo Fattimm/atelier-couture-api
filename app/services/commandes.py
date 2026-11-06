@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.schemas.commande import CommandeCreate, LigneCreate, StatutChangement
@@ -9,6 +9,7 @@ from app.services.clients import obtenir_client
 from app.services.mesures import dernieres_mesures_du_client, obtenir_mesure
 from app.core.exceptions import ActionInterdite, Conflit, DonneesInvalides, RessourceIntrouvable
 from app.models import (Commande, HistoriqueStatut, LigneCommande, RoleUtilisateur, StatutCommande, Utilisateur,)
+from app.services.commun import paginer
 
 # --- Outils internes ----------------------------------------------------------
 
@@ -229,3 +230,58 @@ def changer_statut(
 def lister_historique(db: Session, commande_id: int) -> list[HistoriqueStatut]:
     """Changements de statut d'une commande, dans l'ordre chronologique (route 29)."""
     return obtenir_commande(db, commande_id).historique
+
+
+# --- Liste des commandes -------------------------------------------------------
+
+
+def _condition_en_retard():
+    """RG11 en SQL : date prévue dépassée, et commande ni livrée ni annulée.
+
+    C'est la même règle que la propriété Commande.en_retard (version Python) :
+    toute modification de l'une doit être reportée sur l'autre.
+    """
+    return and_(
+        Commande.date_livraison_prevue < date.today(),
+        Commande.statut.not_in(STATUTS_FINAUX),
+    )
+
+
+def lister_commandes(
+    db: Session,
+    *,
+    statut: StatutCommande | None = None,
+    client_id: int | None = None,
+    en_retard: bool | None = None,
+    date_min: date | None = None,
+    date_max: date | None = None,
+    numero: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[Commande], int]:
+    """Liste paginée, la plus récente d'abord, avec filtres facultatifs (route 25)."""
+    if date_min is not None and date_max is not None and date_min > date_max:
+        raise DonneesInvalides("date_min ne peut pas être postérieure à date_max")
+
+    requete = (
+        select(Commande)
+        .options(selectinload(Commande.client))
+        .order_by(Commande.date_commande.desc(), Commande.id.desc())
+    )
+
+    if statut is not None:
+        requete = requete.where(Commande.statut == statut)
+    if client_id is not None:
+        requete = requete.where(Commande.client_id == client_id)
+    if date_min is not None:
+        requete = requete.where(Commande.date_commande >= date_min)
+    if date_max is not None:
+        requete = requete.where(Commande.date_commande <= date_max)
+    if numero:
+        requete = requete.where(Commande.numero.icontains(numero.strip(), autoescape=True))
+    if en_retard is True:
+        requete = requete.where(_condition_en_retard())
+    elif en_retard is False:
+        requete = requete.where(not_(_condition_en_retard()))
+
+    return paginer(db, requete, limit, offset)

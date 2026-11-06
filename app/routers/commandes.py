@@ -1,9 +1,13 @@
 from fastapi import APIRouter, status
 
-from app.core.deps import AccueilUser, CurrentUser, SessionDep
 from app.services import commandes as service
-from app.models import Commande, HistoriqueStatut
-from app.schemas.commande import CommandeCreate, CommandeDetail, HistoriqueRead, StatutChangement
+from datetime import date
+from typing import Any
+
+from app.core.deps import AccueilUser, CurrentUser, LimitParam, OffsetParam, SessionDep
+from app.models import Commande, HistoriqueStatut, StatutCommande
+from app.schemas.commande import CommandeCreate, CommandeDetail, CommandeResume, HistoriqueRead, StatutChangement
+from app.schemas.commun import Page
 
 router = APIRouter(prefix="/commandes", tags=["Commandes"])
 
@@ -14,6 +18,34 @@ def creer_commande(donnees: CommandeCreate, db: SessionDep, accueil: AccueilUser
     commande = service.creer_commande(db, donnees, accueil)
     db.commit()
     return commande
+
+
+@router.get("", response_model=Page[CommandeResume])
+def lister_commandes(
+    db: SessionDep,
+    _utilisateur: CurrentUser,
+    statut: StatutCommande | None = None,
+    client_id: int | None = None,
+    en_retard: bool | None = None,
+    date_min: date | None = None,
+    date_max: date | None = None,
+    numero: str | None = None,
+    limit: LimitParam = 20,
+    offset: OffsetParam = 0,
+) -> dict[str, Any]:
+    """Liste paginée des commandes, la plus récente d'abord, avec filtres."""
+    elements, total = service.lister_commandes(
+        db,
+        statut=statut,
+        client_id=client_id,
+        en_retard=en_retard,
+        date_min=date_min,
+        date_max=date_max,
+        numero=numero,
+        limit=limit,
+        offset=offset,
+    )
+    return {"items": elements, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{commande_id}", response_model=CommandeDetail)
