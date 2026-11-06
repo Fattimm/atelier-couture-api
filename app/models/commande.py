@@ -76,6 +76,26 @@ class Commande(Base):
         cascade="all, delete-orphan",
         order_by="(HistoriqueStatut.date_changement, HistoriqueStatut.id)",
     )
+    
+    # --- Valeurs calculées (non stockées) -------------------------------
+    
+    @property
+    def solde(self) -> int:
+        """Reste à payer : total − payé (RG7)."""
+        return self.montant_total - self.montant_paye
+
+    @property
+    def en_retard(self) -> bool:
+        """RG11 : date prévue dépassée, et commande ni livrée ni annulée."""
+        return (
+            self.date_livraison_prevue < date.today()
+            and self.statut not in (StatutCommande.livree, StatutCommande.annulee)
+        )
+
+    @property
+    def client_nom(self) -> str:
+        """Prénom et nom du client, pour les listes (route 25)."""
+        return f"{self.client.prenom} {self.client.nom}"
 
 
 class LigneCommande(Base):
@@ -97,11 +117,16 @@ class LigneCommande(Base):
     commande: Mapped["Commande"] = relationship(back_populates="lignes")
     type_vetement: Mapped["TypeVetement"] = relationship()
 
+    
     @property
     def sous_total(self) -> int:
         """Quantité × prix unitaire (calculé, non stocké)."""
         return self.quantite * self.prix_unitaire
 
+    @property
+    def type_vetement_nom(self) -> str:
+        """Nom de la prestation commandée (route 26)."""
+        return self.type_vetement.nom
 
 class HistoriqueStatut(Base):
     """Un changement de statut d'une commande (RG15)."""
