@@ -6,7 +6,7 @@ from typing import Any
 
 from app.core.deps import AccueilUser, CurrentUser, LimitParam, OffsetParam, SessionDep
 from app.models import Commande, HistoriqueStatut, StatutCommande
-from app.schemas.commande import CommandeCreate, CommandeDetail, CommandeResume, HistoriqueRead, StatutChangement
+from app.schemas.commande import CommandeCreate, CommandeDetail, CommandeResume, CommandeUpdate, LigneCreate, HistoriqueRead, StatutChangement
 from app.schemas.commun import Page
 
 router = APIRouter(prefix="/commandes", tags=["Commandes"])
@@ -54,6 +54,19 @@ def obtenir_commande(commande_id: int, db: SessionDep, _utilisateur: CurrentUser
     return service.obtenir_commande(db, commande_id)
 
 
+@router.patch("/{commande_id}", response_model=CommandeDetail)
+def modifier_commande(
+    commande_id: int,
+    donnees: CommandeUpdate,
+    db: SessionDep,
+    _accueil: AccueilUser,
+) -> Commande:
+    """Modifie mesures, date prévue, remise ou notes ; recalcule les montants. 409 si livrée ou annulée."""
+    commande = service.modifier_commande(db, commande_id, donnees)
+    db.commit()
+    return commande
+
+
 @router.post("/{commande_id}/statut", response_model=CommandeDetail)
 def changer_statut(
     commande_id: int,
@@ -71,3 +84,29 @@ def changer_statut(
 def historique_commande(commande_id: int, db: SessionDep, _utilisateur: CurrentUser) -> list[HistoriqueStatut]:
     """Liste chronologique des changements de statut."""
     return service.lister_historique(db, commande_id)
+
+
+@router.post("/{commande_id}/lignes", response_model=CommandeDetail, status_code=status.HTTP_201_CREATED)
+def ajouter_ligne(
+    commande_id: int,
+    donnees: LigneCreate,
+    db: SessionDep,
+    _accueil: AccueilUser,
+) -> Commande:
+    """Ajoute une prestation (RG10) ; renvoie la commande avec les montants recalculés."""
+    commande = service.ajouter_ligne(db, commande_id, donnees)
+    db.commit()
+    return commande
+
+
+@router.delete("/{commande_id}/lignes/{ligne_id}", response_model=CommandeDetail)
+def retirer_ligne(
+    commande_id: int,
+    ligne_id: int,
+    db: SessionDep,
+    _accueil: AccueilUser,
+) -> Commande:
+    """Retire une prestation (RG10) ; renvoie la commande mise à jour. 404 si la ligne n'existe pas."""
+    commande = service.retirer_ligne(db, commande_id, ligne_id)
+    db.commit()
+    return commande

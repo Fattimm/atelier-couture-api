@@ -3,13 +3,13 @@ from datetime import date, timedelta
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.schemas.commande import CommandeCreate, LigneCreate, StatutChangement
 from app.services.catalogue import obtenir_type_vetement
 from app.services.clients import obtenir_client
 from app.services.mesures import dernieres_mesures_du_client, obtenir_mesure
 from app.core.exceptions import ActionInterdite, Conflit, DonneesInvalides, RessourceIntrouvable
 from app.models import (Commande, HistoriqueStatut, LigneCommande, RoleUtilisateur, StatutCommande, Utilisateur,)
-from app.services.commun import paginer
+from app.schemas.commande import CommandeCreate, CommandeUpdate, LigneCreate, StatutChangement
+from app.services.commun import paginer, verifier_champs_non_vides
 
 # --- Outils internes ----------------------------------------------------------
 
@@ -285,3 +285,79 @@ def lister_commandes(
         requete = requete.where(not_(_condition_en_retard()))
 
     return paginer(db, requete, limit, offset)
+
+
+# --- Modification d'une commande et de ses lignes ---------------------------
+
+
+def _verifier_commande_modifiable(commande: Commande) -> None:
+    """RG12 : une commande livrée ou annulée n'est plus modifiable."""
+    if commande.statut in STATUTS_FINAUX:
+        raise Conflit(f"La commande {commande.numero} est {commande.statut.value} : elle n'est plus modifiable")
+
+
+def _verifier_lignes_modifiables(commande: Commande) -> None:
+    """RG10 : les lignes ne sont modifiables que tant que la commande est en_attente."""
+    if commande.statut != StatutCommande.en_attente:
+        raise Conflit(
+            f"Les lignes ne sont modifiables que tant que la commande est en_attente "
+            f"(statut actuel : {commande.statut.value})"
+        )
+
+
+def modifier_commande(db: Session, commande_id: int, donnees: CommandeUpdate) -> Commande:
+    """Modifie mesures, date prévue, remise ou notes, puis recalcule les montants (route 27)."""
+    commande = obtenir_commande(db, commande_id)
+    _verifier_commande_modifiable(commande)
+
+    changements = donnees.model_dump(exclude_unset=True)
+    verifier_champs_non_vides(changements, effacables={"mesure_id", "notes"})
+
+    # RG9 : les nouvelles mesures doivent appartenir au client de la commande
+    if changements.get("mesure_id") is not None:
+        changements["mesure_id"] = _choisir_mesure(db, commande.client_id, changements["mesure_id"])
+
+    # RG8 : la date prévue ne peut pas précéder la date de commande
+    if "date_livraison_prevue" in changements and changements["date_livraison_prevue"] < commande.date_commande:
+        raise DonneesInvalides("La date de livraison prévue ne peut pas précéder la date de commande")
+
+    for champ, valeur in changements.items():
+        setattr(commande, champ, valeur)
+
+    recalculer_montant_total(commande)  # RG7
+    db.flush()
+    return commande
+
+
+def ajouter_ligne(db: Session, commande_id: int, donnees: LigneCreate) -> Commande:
+    """Ajoute une prestation à une commande en attente (route 30)."""
+    commande = obtenir_commande(db, commande_id)
+    _verifier_commande_modifiable(commande)
+    _verifier_lignes_modifiables(commande)
+
+    ligne, _delai = _preparer_ligne(db, donnees)  # RG6 : prestation active, prix par défaut
+    commande.lignes.append(ligne)
+
+    recalculer_montant_total(commande)  # RG7
+    db.flush()
+    return commande
+
+
+def retirer_ligne(db: Session, commande_id: int, ligne_id: int) -> Commande:
+    """Retire une prestation d'une commande en attente (route 31)."""
+    commande = obtenir_commande(db, commande_id)
+
+    ligne = next((l for l in commande.lignes if l.id == ligne_id), None)
+    if ligne is None:
+        raise RessourceIntrouvable(f"Aucune ligne {ligne_id} dans la commande {commande.numero}")
+
+    _verifier_commande_modifiable(commande)
+    _verifier_lignes_modifiables(commande)
+
+    if len(commande.lignes) == 1:
+        raise Conflit("Une commande garde toujours au moins une ligne : annulez-la plutôt")
+
+    commande.lignes.remove(ligne)  # delete-orphan : la ligne sera supprimée de la base
+    recalculer_montant_total(commande)  # RG7
+    db.flush()
+    return commande
