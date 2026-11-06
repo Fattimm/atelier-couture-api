@@ -48,6 +48,15 @@ class CommandeUpdate(BaseModel):
     notes: Texte | None = None
 
 
+class StatutChangement(BaseModel):
+    """Demande de changement de statut (POST /commandes/{id}/statut)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    statut: StatutCommande
+    commentaire: Texte | None = None
+
+    
 # --- Sorties -----------------------------------------------------------------
 
 

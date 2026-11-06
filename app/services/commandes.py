@@ -3,15 +3,28 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.core.exceptions import Conflit, DonneesInvalides, RessourceIntrouvable
-from app.models import Commande, HistoriqueStatut, LigneCommande, StatutCommande, Utilisateur
-from app.schemas.commande import CommandeCreate, LigneCreate
+from app.schemas.commande import CommandeCreate, LigneCreate, StatutChangement
 from app.services.catalogue import obtenir_type_vetement
 from app.services.clients import obtenir_client
 from app.services.mesures import dernieres_mesures_du_client, obtenir_mesure
-
+from app.core.exceptions import ActionInterdite, Conflit, DonneesInvalides, RessourceIntrouvable
+from app.models import (Commande, HistoriqueStatut, LigneCommande, RoleUtilisateur, StatutCommande, Utilisateur,)
 
 # --- Outils internes ----------------------------------------------------------
+
+# Workflow des statuts (section 6 de l'énoncé) : statut actuel → statuts suivants autorisés
+TRANSITIONS: dict[StatutCommande, set[StatutCommande]] = {
+    StatutCommande.en_attente: {StatutCommande.en_coupe, StatutCommande.annulee},
+    StatutCommande.en_coupe: {StatutCommande.en_couture, StatutCommande.annulee},
+    StatutCommande.en_couture: {StatutCommande.essayage, StatutCommande.terminee, StatutCommande.annulee},
+    StatutCommande.essayage: {StatutCommande.retouches, StatutCommande.terminee, StatutCommande.annulee},
+    StatutCommande.retouches: {StatutCommande.essayage, StatutCommande.terminee, StatutCommande.annulee},
+    StatutCommande.terminee: {StatutCommande.livree},  # uniquement par la confirmation de livraison
+    StatutCommande.livree: set(),  # statut final
+    StatutCommande.annulee: set(),  # statut final
+}
+
+STATUTS_FINAUX = {StatutCommande.livree, StatutCommande.annulee}
 
 
 def _choisir_mesure(db: Session, client_id: int, mesure_id: int | None) -> int | None:
@@ -143,3 +156,76 @@ def obtenir_commande(db: Session, commande_id: int) -> Commande:
     if commande is None:
         raise RessourceIntrouvable(f"Aucune commande avec l'identifiant {commande_id}")
     return commande
+
+
+# --- Workflow des statuts ----------------------------------------------------
+
+
+def enregistrer_changement_statut(
+    commande: Commande,
+    nouveau_statut: StatutCommande,
+    auteur: Utilisateur,
+    commentaire: str | None,
+) -> None:
+    """RG15 : applique le nouveau statut et l'inscrit dans l'historique."""
+    commande.historique.append(
+        HistoriqueStatut(
+            ancien_statut=commande.statut,
+            nouveau_statut=nouveau_statut,
+            commentaire=commentaire,
+            utilisateur_id=auteur.id,
+        )
+    )
+    commande.statut = nouveau_statut
+
+
+def changer_statut(
+    db: Session,
+    commande_id: int,
+    donnees: StatutChangement,
+    auteur: Utilisateur,
+) -> Commande:
+    """Fait évoluer le statut selon le workflow (route 28). Applique RG12 à RG15."""
+    commande = obtenir_commande(db, commande_id)
+    actuel, demande = commande.statut, donnees.statut
+    commentaire = donnees.commentaire or None  # un commentaire vide compte comme absent
+
+    # RG14 : le tailleur ne peut pas annuler une commande
+    if demande == StatutCommande.annulee and auteur.role == RoleUtilisateur.tailleur:
+        raise ActionInterdite("Le tailleur ne peut pas annuler une commande")
+
+    # RG13 : demander le statut déjà en cours est refusé
+    if demande == actuel:
+        raise Conflit(f"La commande est déjà au statut {actuel.value}")
+
+    # RG13 : « livree » résulte uniquement de la confirmation de livraison
+    if demande == StatutCommande.livree:
+        raise Conflit(
+            "Le statut livree ne peut pas être posé ici : il résulte de la confirmation de livraison"
+        )
+
+    # RG12 : une commande livrée ou annulée n'est plus modifiable
+    if actuel in STATUTS_FINAUX:
+        raise Conflit(f"La commande est {actuel.value} : elle n'est plus modifiable")
+
+    # Workflow : la transition doit figurer dans le tableau
+    if demande not in TRANSITIONS[actuel]:
+        possibles = sorted(s.value for s in TRANSITIONS[actuel] if s != StatutCommande.livree)
+        liste = ", ".join(possibles) if possibles else "aucun (seule la confirmation de livraison est possible)"
+        raise Conflit(f"Transition interdite : {actuel.value} → {demande.value}. Statuts possibles : {liste}")
+
+    # RG14 : annuler une commande qui a reçu un acompte exige un commentaire
+    if demande == StatutCommande.annulee and commande.montant_paye > 0 and commentaire is None:
+        raise DonneesInvalides(
+            f"Cette commande a reçu {commande.montant_paye} F : indiquez en commentaire "
+            "ce que devient cet argent (remboursement, avoir...)"
+        )
+
+    enregistrer_changement_statut(commande, demande, auteur, commentaire)
+    db.flush()
+    return commande
+
+
+def lister_historique(db: Session, commande_id: int) -> list[HistoriqueStatut]:
+    """Changements de statut d'une commande, dans l'ordre chronologique (route 29)."""
+    return obtenir_commande(db, commande_id).historique
