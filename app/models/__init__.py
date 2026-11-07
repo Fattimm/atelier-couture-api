@@ -3,6 +3,7 @@ from app.models.commande import Commande, HistoriqueStatut, LigneCommande, Statu
 from app.models.mesure import CHAMPS_MESURES, Mesure
 from app.models.type_vetement import TypeVetement
 from app.models.utilisateur import RoleUtilisateur, Utilisateur
+from app.models.paiement import ModePaiement, Paiement
 
 __all__ = [
     "CHAMPS_MESURES",
@@ -16,4 +17,6 @@ __all__ = [
     "StatutCommande",
     "TypeVetement",
     "Utilisateur",
+    "ModePaiement",
+    "Paiement",
 ]
