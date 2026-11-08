@@ -6,7 +6,8 @@ from app.core.exceptions import ErreurMetier, traduire_erreur_validation
 from app.core.config import settings
 from app.core.exceptions import ErreurMetier
 from app.routers import auth, health
-from app.routers import auth, catalogue, clients, commandes, health, mesures, utilisateurs
+from app.routers import auth, catalogue, clients, commandes, health, mesures, paiements, utilisateurs
+
 API_PREFIX = "/api/v1"
 
 app = FastAPI(
@@ -42,3 +43,4 @@ app.include_router(catalogue.router, prefix=API_PREFIX)
 app.include_router(clients.router, prefix=API_PREFIX)
 app.include_router(mesures.router, prefix=API_PREFIX)
 app.include_router(commandes.router, prefix=API_PREFIX)
+app.include_router(paiements.router, prefix=API_PREFIX)
