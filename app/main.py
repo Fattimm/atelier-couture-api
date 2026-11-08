@@ -16,6 +16,7 @@ from app.routers import (
     mesures,
     paiements,
     utilisateurs,
+    statistiques,
 )
 
 API_PREFIX = "/api/v1"
@@ -55,3 +56,4 @@ app.include_router(mesures.router, prefix=API_PREFIX)
 app.include_router(commandes.router, prefix=API_PREFIX)
 app.include_router(paiements.router, prefix=API_PREFIX)
 app.include_router(livraisons.router, prefix=API_PREFIX)
+app.include_router(statistiques.router, prefix=API_PREFIX)

@@ -237,7 +237,7 @@ def lister_historique(db: Session, commande_id: int) -> list[HistoriqueStatut]:
 # --- Liste des commandes -------------------------------------------------------
 
 
-def _condition_en_retard():
+def condition_en_retard():
     """RG11 en SQL : date prévue dépassée, et commande ni livrée ni annulée.
 
     C'est la même règle que la propriété Commande.en_retard (version Python) :
@@ -282,9 +282,9 @@ def lister_commandes(
     if numero:
         requete = requete.where(Commande.numero.icontains(numero.strip(), autoescape=True))
     if en_retard is True:
-        requete = requete.where(_condition_en_retard())
+        requete = requete.where(condition_en_retard())
     elif en_retard is False:
-        requete = requete.where(not_(_condition_en_retard()))
+        requete = requete.where(not_(condition_en_retard()))
 
     return paginer(db, requete, limit, offset)
 
