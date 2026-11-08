@@ -2,11 +2,29 @@ from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
+from app.core.exceptions import DonneesInvalides
 
-from app.models import Commande, Livraison, Paiement, StatutCommande, StatutLivraison
-from app.schemas.statistiques import TableauDeBord
 from app.services.commandes import condition_en_retard
 from app.services.commun import paginer
+from sqlalchemy import Date, cast, func, select
+from app.models import (
+    Client,
+    Commande,
+    LigneCommande,
+    Livraison,
+    Paiement,
+    StatutCommande,
+    StatutLivraison,
+    TypeVetement,
+)
+from app.schemas.statistiques import (
+    ChiffreAffaires,
+    Granularite,
+    PeriodeChiffreAffaires,
+    TableauDeBord,
+    TopClient,
+    VenteTypeVetement,
+)
 
 NON_ANNULEE = Commande.statut != StatutCommande.annulee
 
@@ -84,3 +102,127 @@ def lister_impayes(db: Session, limit: int, offset: int) -> tuple[list[Commande]
         .order_by(Commande.date_livraison_prevue, Commande.id)
     )
     return paginer(db, requete, limit, offset)
+
+
+# --- Période commune aux statistiques (routes 40 à 42) ------------------------
+
+
+def resoudre_periode(date_debut: date | None, date_fin: date | None) -> tuple[date, date]:
+    """Par défaut : du 1er du mois courant à aujourd'hui. 422 si date_debut > date_fin."""
+    aujourd_hui = date.today()
+    debut = date_debut or aujourd_hui.replace(day=1)
+    fin = date_fin or aujourd_hui
+    if debut > fin:
+        raise DonneesInvalides(f"date_debut ({debut}) ne peut pas être postérieure à date_fin ({fin})")
+    return debut, fin
+
+
+def _periode_sql(colonne, granularite: Granularite):
+    """Ramène une date au début du jour ou du mois (date_trunc), pour le regroupement."""
+    unite = "day" if granularite == Granularite.jour else "month"
+    return cast(func.date_trunc(unite, colonne), Date)
+
+
+def _formater_periode(jour: date, granularite: Granularite) -> str:
+    return jour.isoformat() if granularite == Granularite.jour else jour.strftime("%Y-%m")
+
+
+# --- Route 40 -------------------------------------------------------------------
+
+
+def chiffre_affaires(
+    db: Session,
+    granularite: Granularite,
+    date_debut: date | None,
+    date_fin: date | None,
+) -> ChiffreAffaires:
+    """Chiffre d'affaires (date de commande) et encaissements (date de paiement) par période."""
+    debut, fin = resoudre_periode(date_debut, date_fin)
+
+    periode_ca = _periode_sql(Commande.date_commande, granularite).label("periode")
+    lignes_ca = db.execute(
+        select(periode_ca, func.sum(Commande.montant_total))
+        .where(NON_ANNULEE, Commande.date_commande.between(debut, fin))
+        .group_by(periode_ca)
+    ).all()
+
+    periode_enc = _periode_sql(Paiement.date_paiement, granularite).label("periode")
+    lignes_enc = db.execute(
+        select(periode_enc, func.sum(Paiement.montant))
+        .where(Paiement.date_paiement.between(debut, fin))
+        .group_by(periode_enc)
+    ).all()
+
+    # Fusion : toutes les périodes présentes dans l'un ou l'autre des résultats
+    par_periode: dict[date, dict[str, int]] = {}
+    for jour, montant in lignes_ca:
+        par_periode.setdefault(jour, {"chiffre_affaires": 0, "encaisse": 0})["chiffre_affaires"] = montant
+    for jour, montant in lignes_enc:
+        par_periode.setdefault(jour, {"chiffre_affaires": 0, "encaisse": 0})["encaisse"] = montant
+
+    periodes = [
+        PeriodeChiffreAffaires(periode=_formater_periode(jour, granularite), **valeurs)
+        for jour, valeurs in sorted(par_periode.items())
+    ]
+    return ChiffreAffaires(
+        granularite=granularite,
+        date_debut=debut,
+        date_fin=fin,
+        total_chiffre_affaires=sum(p.chiffre_affaires for p in periodes),
+        total_encaisse=sum(p.encaisse for p in periodes),
+        periodes=periodes,
+    )
+
+
+# --- Route 41 -------------------------------------------------------------------
+
+
+def ventes_par_type_vetement(db: Session, date_debut: date | None, date_fin: date | None) -> list[VenteTypeVetement]:
+    """Quantité vendue et chiffre d'affaires avant remise, par prestation, du plus élevé au plus faible."""
+    debut, fin = resoudre_periode(date_debut, date_fin)
+
+    quantite = func.sum(LigneCommande.quantite).label("quantite_vendue")
+    ca = func.sum(LigneCommande.quantite * LigneCommande.prix_unitaire).label("chiffre_affaires")
+    requete = (
+        select(TypeVetement.id, TypeVetement.nom, quantite, ca)
+        .join(LigneCommande, LigneCommande.type_vetement_id == TypeVetement.id)
+        .join(Commande, Commande.id == LigneCommande.commande_id)
+        .where(NON_ANNULEE, Commande.date_commande.between(debut, fin))
+        .group_by(TypeVetement.id, TypeVetement.nom)
+        .order_by(ca.desc(), TypeVetement.nom)
+    )
+    return [
+        VenteTypeVetement(type_vetement_id=ligne.id, nom=ligne.nom,
+                          quantite_vendue=ligne.quantite_vendue, chiffre_affaires=ligne.chiffre_affaires)
+        for ligne in db.execute(requete)
+    ]
+
+
+# --- Route 42 -------------------------------------------------------------------
+
+
+def top_clients(db: Session, limite: int, date_debut: date | None, date_fin: date | None) -> list[TopClient]:
+    """Meilleurs clients de la période, par chiffre d'affaires décroissant."""
+    debut, fin = resoudre_periode(date_debut, date_fin)
+
+    ca = func.sum(Commande.montant_total).label("chiffre_affaires")
+    requete = (
+        select(
+            Client.id,
+            Client.prenom,
+            Client.nom,
+            func.count(Commande.id).label("nb_commandes"),
+            ca,
+            func.sum(Commande.montant_total - Commande.montant_paye).label("solde_du"),
+        )
+        .join(Commande, Commande.client_id == Client.id)
+        .where(NON_ANNULEE, Commande.date_commande.between(debut, fin))
+        .group_by(Client.id, Client.prenom, Client.nom)
+        .order_by(ca.desc(), Client.id)
+        .limit(limite)
+    )
+    return [
+        TopClient(client_id=ligne.id, client_nom=f"{ligne.prenom} {ligne.nom}", nb_commandes=ligne.nb_commandes,
+                  chiffre_affaires=ligne.chiffre_affaires, solde_du=ligne.solde_du)
+        for ligne in db.execute(requete)
+    ]
