@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.models import StatutCommande
 from app.schemas.paiement import PaiementRead
+from app.schemas.livraison import LivraisonRead
 
 Montant = Annotated[int, Field(ge=0, description="Montant en FCFA")]
 Quantite = Annotated[int, Field(gt=0, le=100)]
@@ -114,4 +115,4 @@ class CommandeDetail(CommandeResume):
     updated_at: datetime
     lignes: list[LigneRead]
     paiements: list[PaiementRead]
-    # La livraison sera ajoutée avec son modèle.
+    livraison: LivraisonRead | None

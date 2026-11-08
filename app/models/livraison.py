@@ -47,3 +47,21 @@ class Livraison(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     commande: Mapped["Commande"] = relationship(back_populates="livraison")
+
+    # --- Valeurs calculées pour la liste de tournée (route 38) ---------------
+
+    @property
+    def numero_commande(self) -> str:
+        return self.commande.numero
+
+    @property
+    def client_nom(self) -> str:
+        return self.commande.client_nom
+
+    @property
+    def client_telephone(self) -> str:
+        return self.commande.client.telephone
+
+    @property
+    def solde_commande(self) -> int:
+        return self.commande.solde

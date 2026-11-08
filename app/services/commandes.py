@@ -152,6 +152,7 @@ def obtenir_commande(db: Session, commande_id: int) -> Commande:
             selectinload(Commande.lignes).joinedload(LigneCommande.type_vetement),
             selectinload(Commande.historique),
             selectinload(Commande.paiements),
+            selectinload(Commande.livraison),
         )
     )
     commande = db.scalar(requete)
