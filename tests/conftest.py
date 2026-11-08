@@ -16,6 +16,7 @@ from app.core.database import Base, get_db
 from app.core.security import hacher_mot_de_passe
 from app.main import app
 from app.models import RoleUtilisateur, TypeVetement, Utilisateur
+import itertools
 
 if not settings.test_database_url:
     raise RuntimeError("Définissez TEST_DATABASE_URL dans le .env pour lancer les tests")
@@ -115,3 +116,46 @@ def catalogue(db: Session) -> dict[str, TypeVetement]:
     db.add_all(prestations.values())
     db.flush()
     return prestations
+
+
+# --- Fabriques : créent des données via l'API, avec des valeurs par défaut -----
+
+
+@pytest.fixture
+def creer_client(client, entetes) -> Callable[..., dict]:
+    """Crée un client (en accueil) et renvoie sa fiche. Téléphone unique par défaut."""
+    compteur = itertools.count(1)
+
+    def _creer(**champs) -> dict:
+        donnees = {"nom": "Diop", "prenom": "Fatou", "telephone": f"77{next(compteur):07d}", **champs}
+        reponse = client.post("/api/v1/clients", json=donnees, headers=entetes("accueil"))
+        assert reponse.status_code == 201, reponse.text
+        return reponse.json()
+
+    return _creer
+
+
+@pytest.fixture
+def prendre_mesures(client, entetes) -> Callable[..., dict]:
+    """Prend des mesures (en tailleur) pour un client et renvoie la prise."""
+
+    def _prendre(client_id: int, **mesures) -> dict:
+        donnees = mesures or {"tour_cou": 38}
+        reponse = client.post(f"/api/v1/clients/{client_id}/mesures", json=donnees, headers=entetes("tailleur"))
+        assert reponse.status_code == 201, reponse.text
+        return reponse.json()
+
+    return _prendre
+
+
+@pytest.fixture
+def creer_commande(client, entetes, catalogue) -> Callable[..., dict]:
+    """Crée une commande (en accueil) : par défaut, un boubou. Renvoie le détail."""
+
+    def _creer(client_id: int, **champs) -> dict:
+        donnees = {"client_id": client_id, "lignes": [{"type_vetement_id": catalogue["boubou"].id}], **champs}
+        reponse = client.post("/api/v1/commandes", json=donnees, headers=entetes("accueil"))
+        assert reponse.status_code == 201, reponse.text
+        return reponse.json()
+
+    return _creer
