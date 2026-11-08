@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.mesure import Mesure
     from app.models.type_vetement import TypeVetement
     from app.models.paiement import Paiement
+    from app.models.livraison import Livraison
 
 
 class StatutCommande(enum.StrEnum):
@@ -81,6 +82,10 @@ class Commande(Base):
         back_populates="commande",
         cascade="all, delete-orphan",
         order_by="Paiement.id",  # ordre de saisie (route 33)
+    )
+    livraison: Mapped["Livraison | None"] = relationship(
+        back_populates="commande",
+        cascade="all, delete-orphan",
     )
     
     # --- Valeurs calculées (non stockées) -------------------------------

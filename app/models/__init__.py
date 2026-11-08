@@ -4,6 +4,7 @@ from app.models.mesure import CHAMPS_MESURES, Mesure
 from app.models.type_vetement import TypeVetement
 from app.models.utilisateur import RoleUtilisateur, Utilisateur
 from app.models.paiement import ModePaiement, Paiement
+from app.models.livraison import Livraison, ModeLivraison, StatutLivraison
 
 __all__ = [
     "CHAMPS_MESURES",
@@ -12,11 +13,14 @@ __all__ = [
     "GenreClient",
     "HistoriqueStatut",
     "LigneCommande",
+    "Livraison",
     "Mesure",
-    "RoleUtilisateur",
-    "StatutCommande",
-    "TypeVetement",
-    "Utilisateur",
+    "ModeLivraison",
     "ModePaiement",
     "Paiement",
+    "RoleUtilisateur",
+    "StatutCommande",
+    "StatutLivraison",
+    "TypeVetement",
+    "Utilisateur",
 ]
