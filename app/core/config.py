@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     admin_password: str | None = None
     admin_nom_complet: str = "Administrateur"
 
+    # Base de données des tests (facultative : seuls les tests l'utilisent)
+    test_database_url: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
