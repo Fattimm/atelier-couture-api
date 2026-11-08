@@ -1,0 +1,15 @@
+# Environnement local et secrets : jamais dans l'image
+.venv/
+venv/
+.env
+
+# Git et outils
+.git/
+.gitignore
+.pytest_cache/
+.vscode/
+.idea/
+
+# Fichiers Python compilés
+__pycache__/
+*.py[cod]

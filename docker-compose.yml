@@ -17,5 +17,19 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build: .
+    container_name: atelier_api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Dans le réseau Docker, la base s'appelle "db" et écoute sur son port interne 5432
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
